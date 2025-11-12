@@ -1,5 +1,5 @@
 const vscode = require('vscode');
-const REMOTE_URL_BASE = 'http://localhost:3000'; // <-- set this
+const REMOTE_URL_BASE = 'https://mini-meet-full.onrender.com/'; // <-- set this
 
 function activate(context) {
   const disposable = vscode.commands.registerCommand('miniMeet.open', async () => {
