@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Meet</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">Mini Meet</div>
+      <div class="room-controls">
+        <input id="roomIdInput" placeholder="Room ID (or create)" />
+        <button id="joinBtn">Join / Create</button>
+        <button id="copyLinkBtn" title="Copy meeting link">Copy Link</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="video-area" id="videoArea"></section>
+
+      <aside class="sidepane">
+        <div class="controls">
+          <button id="btnToggleAudio">Mute</button>
+          <button id="btnToggleVideo">Stop Video</button>
+          <button id="btnShare">Share Link</button>
+          <button id="leaveBtn" class="danger">Leave</button>
+        </div>
+
+        <div class="chat">
+          <h3>Chat</h3>
+          <div id="chatWindow" class="chatWindow"></div>
+          <form id="chatForm">
+            <input id="chatInput" placeholder="Type a message..." autocomplete="off" />
+            <button>Send</button>
+          </form>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <small>Built with WebRTC • Audio-relay demo</small>
+    </footer>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>
