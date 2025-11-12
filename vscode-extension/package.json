@@ -3,14 +3,17 @@
   "displayName": "Mini Meet (VSCode)",
   "description": "Open the Mini Meet app inside VS Code (embeds your hosted meeting page).",
   "version": "0.0.1",
-  "publisher": "your-name",
+  "publisher": "you",
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Other"],
   "activationEvents": ["onCommand:miniMeet.open"],
   "main": "./extension.js",
   "contributes": {
     "commands": [
-      { "command": "miniMeet.open", "title": "Mini Meet: Open Meeting" }
+      {
+        "command": "miniMeet.open",
+        "title": "Mini Meet: Open Meeting"
+      }
     ]
   }
 }
