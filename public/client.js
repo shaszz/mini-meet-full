@@ -1,9 +1,10 @@
-// public/client.js
+// public/client.js (FINAL)
+// Integrated WebRTC mesh + chat + audio-chunk receiver + browser mic emitter
 console.log('[client] loaded');
 const socket = io();
 let localStream = null;
-const peers = {};
-const remoteVideoContainers = {};
+const peers = {}; // socketId -> RTCPeerConnection
+const remoteVideoContainers = {}; // socketId -> {card, video}
 const videoArea = document.getElementById('videoArea');
 const joinBtn = document.getElementById('joinBtn');
 const roomIdInput = document.getElementById('roomIdInput');
@@ -23,8 +24,8 @@ let videoEnabled = true;
 
 const STUN_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-// ---------------- local media ----------------
-async function initLocalStream(){
+// ---------------- Local media ----------------
+async function initLocalStream() {
   if (localStream) return localStream;
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -36,7 +37,7 @@ async function initLocalStream(){
   }
 }
 
-function addLocalVideo(){
+function addLocalVideo() {
   if (localVideoElem) return;
   localVideoElem = document.createElement('video');
   localVideoElem.autoplay = true;
@@ -54,8 +55,8 @@ function addLocalVideo(){
   videoArea.prepend(card);
 }
 
-// ---------------- remote video helpers ----------------
-function createRemoteVideo(socketId){
+// ---------------- Remote video helpers ----------------
+function createRemoteVideo(socketId) {
   if (remoteVideoContainers[socketId]) return remoteVideoContainers[socketId].video;
   const video = document.createElement('video');
   video.autoplay = true;
@@ -76,19 +77,19 @@ function createRemoteVideo(socketId){
   return video;
 }
 
-function removeRemoteVideo(socketId){
+function removeRemoteVideo(socketId) {
   const entry = remoteVideoContainers[socketId];
-  if(entry){
+  if (entry) {
     entry.card.remove();
     delete remoteVideoContainers[socketId];
   }
 }
 
-// ---------------- PeerConnection ----------------
-function createPeerConnection(targetSocketId){
-  const existing = peers[targetSocketId];
-  if (existing) return existing;
+// ---------------- PeerConnection (mesh) ----------------
+function createPeerConnection(targetSocketId) {
+  if (peers[targetSocketId]) return peers[targetSocketId];
   const pc = new RTCPeerConnection(STUN_SERVERS);
+  console.log('[pc] create for', targetSocketId);
 
   if (localStream) {
     for (const t of localStream.getTracks()) pc.addTrack(t, localStream);
@@ -108,8 +109,9 @@ function createPeerConnection(targetSocketId){
   };
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed'){
-      try { pc.close(); } catch(e){}
+    console.log('[pc] state', targetSocketId, pc.connectionState);
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+      try { pc.close(); } catch (e) {}
       delete peers[targetSocketId];
       removeRemoteVideo(targetSocketId);
     }
@@ -122,7 +124,7 @@ function createPeerConnection(targetSocketId){
 // ---------------- Join / UI ----------------
 joinBtn.addEventListener('click', async () => {
   if (!roomIdInput.value.trim()) {
-    roomId = Math.random().toString(36).slice(2,9);
+    roomId = Math.random().toString(36).slice(2, 9);
     roomIdInput.value = roomId;
   } else roomId = roomIdInput.value.trim();
 
@@ -130,11 +132,16 @@ joinBtn.addEventListener('click', async () => {
   socket.emit('join-room', roomId);
   joinBtn.disabled = true;
   roomIdInput.disabled = true;
+
+  // start browser mic emitter shortly after join (user gesture needed)
+  setTimeout(() => {
+    if (startMicEmitter) startMicEmitter(); // function defined later
+  }, 200);
 });
 
 copyLinkBtn.addEventListener('click', () => {
   const url = location.origin + '/?room=' + encodeURIComponent(roomIdInput.value.trim());
-  navigator.clipboard.writeText(url).then(()=> alert('Link copied!'));
+  navigator.clipboard.writeText(url).then(() => alert('Link copied!'));
 });
 
 btnToggleAudio.addEventListener('click', () => {
@@ -159,14 +166,14 @@ leaveBtn.addEventListener('click', () => {
   roomIdInput.disabled = false;
 });
 
-function cleanupAll(){
-  if(localStream){
-    localStream.getTracks().forEach(t=>t.stop());
+function cleanupAll() {
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
     localStream = null;
   }
-  if(localVideoElem) localVideoElem.srcObject = null;
-  for(const id in peers) {
-    try { peers[id].close(); } catch(e){}
+  if (localVideoElem) localVideoElem.srcObject = null;
+  for (const id in peers) {
+    try { peers[id].close(); } catch (e) {}
     delete peers[id];
   }
   Object.keys(remoteVideoContainers).forEach(removeRemoteVideo);
@@ -191,10 +198,10 @@ function appendChat({ sender, text, ts }) {
   chatWindow.appendChild(el);
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
-function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function escapeHtml(s) { return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
 
 // ---------------- Socket handlers / Signaling ----------------
-(function prefillFromQuery(){
+(function prefillFromQuery() {
   const params = new URLSearchParams(location.search);
   const r = params.get('room');
   if (r) roomIdInput.value = r;
@@ -203,6 +210,8 @@ function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').
 socket.on('connect', () => console.log('[socket] connected', socket.id));
 
 socket.on('existing-users', async (users) => {
+  console.log('[socket] existing-users', users);
+  // newcomer creates offers to each existing user
   for (const otherId of users) {
     const pc = createPeerConnection(otherId);
     createRemoteVideo(otherId);
@@ -222,38 +231,51 @@ socket.on('user-joined', (socketId) => {
 });
 
 socket.on('offer', async (payload) => {
+  console.log('[socket] offer from', payload.sender);
   const { sender, sdp } = payload;
   const pc = peers[sender] || createPeerConnection(sender);
-  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  socket.emit('answer', { target: sender, sdp: answer, sender: socket.id, roomId });
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('answer', { target: sender, sdp: answer, sender: socket.id, roomId });
+  } catch (err) {
+    console.error('handle offer error', err);
+  }
 });
 
 socket.on('answer', async (payload) => {
-  const { sender, sdp } = payload;
-  const pc = peers[sender];
-  if (!pc) { console.warn('No pc for answer from', sender); return; }
-  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  console.log('[socket] answer from', payload.sender);
+  const pc = peers[payload.sender];
+  if (!pc) return console.warn('no pc for answer');
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+  } catch (err) {
+    console.error('setRemoteDescription(answer) failed', err);
+  }
 });
 
 socket.on('ice-candidate', async (payload) => {
   const { sender, candidate } = payload;
   const pc = peers[sender];
-  if (!pc) { console.warn('No pc for candidate yet from', sender); return; }
-  try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.error('addIceCandidate failed', e); }
+  if (!pc) return console.warn('no pc for candidate yet from', sender);
+  try {
+    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+  } catch (err) {
+    console.error('addIceCandidate failed', err);
+  }
 });
 
 socket.on('chat', (msg) => appendChat({ sender: msg.sender, text: msg.text, ts: msg.ts }));
 
 socket.on('user-left', (socketId) => {
-  if(peers[socketId]) { try { peers[socketId].close(); } catch(e){} delete peers[socketId]; }
+  console.log('[socket] user-left', socketId);
+  if (peers[socketId]) { try { peers[socketId].close(); } catch (e) {} delete peers[socketId]; }
   removeRemoteVideo(socketId);
 });
 
-// ---------------- Audio chunk receiver ----------------
-(function initRemoteAudioReceiver(){
-  // requires socket (socket.io client)
+// ---------------- Audio chunk receiver (play incoming base64 int16 PCM) ----------------
+(function initRemoteAudioReceiver() {
   if (!window.AudioContext && !window.webkitAudioContext) {
     console.warn('AudioContext not supported');
     return;
@@ -315,9 +337,142 @@ socket.on('user-left', (socketId) => {
     }
   });
 
-  // resume on user gesture
+  // resume AudioContext on user gesture
   document.addEventListener('click', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }, { once: true });
+
   console.log('Remote audio receiver initialized');
 })();
+
+// ---------------- Browser mic emitter (capture + send base64 int16 PCM) ----------------
+/*
+  - Emits { room, data, sample_rate, channels } events on socket
+  - Resamples (naive linear) to OUT_SAMPLE_RATE if needed
+  - Starts on user gesture (click or when Join pressed)
+*/
+(function initBrowserMicEmitterModule() {
+  const OUT_SAMPLE_RATE = 16000; // must match python
+  const OUT_CHANNELS = 1;
+  const OUT_BLOCK_MS = 200; // chunk size in ms (tune for latency)
+  const OUT_BLOCK_FRAMES = Math.floor(OUT_SAMPLE_RATE * (OUT_BLOCK_MS / 1000));
+  let micStream = null;
+  let recorderNode = null;
+  let audioCtx = null;
+  let inputReady = false;
+  let pcmBuffer = []; // array of Float32Array fragments
+
+  async function startMicEmitter() {
+    if (inputReady) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 }, video: false });
+      micStream = stream;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+
+      // ScriptProcessorNode (legacy) - bufferSize power of two
+      const bufferSize = 4096;
+      recorderNode = audioCtx.createScriptProcessor(bufferSize, OUT_CHANNELS, OUT_CHANNELS);
+
+      recorderNode.onaudioprocess = (evt) => {
+        try {
+          const inBuf = evt.inputBuffer.getChannelData(0);
+          // copy input float32
+          pcmBuffer.push(new Float32Array(inBuf));
+
+          // compute total samples accumulated
+          let total = 0;
+          for (const b of pcmBuffer) total += b.length;
+
+          if (total >= OUT_BLOCK_FRAMES) {
+            // build OUT_BLOCK_FRAMES sized Float32Array
+            const out = new Float32Array(OUT_BLOCK_FRAMES);
+            let offset = 0;
+            while (offset < OUT_BLOCK_FRAMES && pcmBuffer.length) {
+              const chunk = pcmBuffer[0];
+              const need = OUT_BLOCK_FRAMES - offset;
+              if (chunk.length <= need) {
+                out.set(chunk, offset);
+                offset += chunk.length;
+                pcmBuffer.shift();
+              } else {
+                out.set(chunk.subarray(0, need), offset);
+                pcmBuffer[0] = chunk.subarray(need);
+                offset += need;
+              }
+            }
+
+            // resample if needed
+            let float32ForEncoding = out;
+            if (audioCtx.sampleRate !== OUT_SAMPLE_RATE) {
+              const r = OUT_SAMPLE_RATE / audioCtx.sampleRate;
+              const newLen = Math.floor(out.length * r);
+              const resampled = new Float32Array(newLen);
+              for (let i = 0; i < newLen; i++) {
+                const idx = i / r;
+                const i0 = Math.floor(idx);
+                const i1 = Math.min(out.length - 1, i0 + 1);
+                const t = idx - i0;
+                resampled[i] = out[i0] * (1 - t) + out[i1] * t;
+              }
+              float32ForEncoding = resampled;
+            }
+
+            // float32 -> int16 little-endian
+            const int16 = new Int16Array(float32ForEncoding.length);
+            for (let i = 0; i < float32ForEncoding.length; i++) {
+              let s = Math.max(-1, Math.min(1, float32ForEncoding[i]));
+              int16[i] = s < 0 ? s * 32768 : s * 32767;
+            }
+
+            // bytes view
+            const bytes = new Uint8Array(int16.buffer);
+
+            // base64 encode in chunks to avoid stack issues
+            let binary = '';
+            const chunkSize = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+            }
+            const b64 = btoa(binary);
+
+            // emit to server (include room)
+            if (roomId) {
+              // just before socket.emit in the emitter
+              console.log(`[emit audio-chunk] room=${roomId} bytes=${b64.length}`);
+              socket.emit('audio-chunk', { room: roomId, data: b64, sample_rate: OUT_SAMPLE_RATE, channels: OUT_CHANNELS });
+            }
+          }
+        } catch (ex) {
+          console.error('recorder error', ex);
+        }
+      };
+
+      source.connect(recorderNode);
+      // connect to destination but set gain to 0 so we don't hear our own chunks (avoid feedback)
+      const silentGain = audioCtx.createGain();
+      silentGain.gain.value = 0;
+      recorderNode.connect(silentGain);
+      silentGain.connect(audioCtx.destination);
+
+      inputReady = true;
+      console.log('🔊 Browser mic emitter started (click page once to allow)');
+    } catch (e) {
+      console.error('Failed to start mic emitter', e);
+    }
+  }
+
+  // start on user gesture
+  document.addEventListener('click', () => {
+    if (!inputReady) startMicEmitter();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }, { once: true });
+
+  // also start when user clicks Join (helps UX)
+  joinBtn.addEventListener('click', () => { setTimeout(() => { if (!inputReady) startMicEmitter(); }, 200); });
+
+  // expose startMicEmitter for manual call
+  window.startMicEmitter = startMicEmitter;
+})();
+
+// end of file

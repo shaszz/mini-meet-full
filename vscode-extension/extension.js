@@ -1,7 +1,7 @@
 const vscode = require('vscode');
 
 // <- Set this to your deployed app or http://localhost:3000 for local testing
-const REMOTE_URL_BASE = 'http://localhost:3000';
+const REMOTE_URL_BASE = 'https://mini-meet-full.onrender.com';
 
 function activate(context) {
   console.log('[mini-meet] activate() called'); // shows in Extension Development Host console
@@ -70,6 +70,7 @@ function getWebviewContent(remoteUrl, roomId) {
       .note{position:absolute;left:12px;top:10px;color:#cbd5e1;font-size:12px;z-index:1000}
     </style>
   </head>
+  
   <body>
     <div class="note">Mini Meet — room: ${roomId}</div>
     <div class="toolbar">
