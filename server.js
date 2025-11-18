@@ -69,24 +69,38 @@ io.on('connection', (socket) => {
 
   // AUDIO CHUNK relay: receives audio-chunk from any publisher (python client) and forwards to other sockets in the room
   // Expected payload: { room: <roomId>, data: <base64 string>, sample_rate: <number>, channels: <number>, sender: <optional> }
-  socket.on('audio-chunk', (payload) => {
-    try {
-      const roomId = payload.room || socket.data.roomId;
-      if (!roomId) return;
-      // include sender id if not provided
-      const sender = payload.sender || socket.id;
-      const out = {
-        data: payload.data,
-        sample_rate: payload.sample_rate || 16000,
-        channels: payload.channels || 1,
-        sender
-      };
-      // send to all others in room
-      socket.to(roomId).emit('audio-chunk', out);
-    } catch (err) {
-      console.error('audio-chunk error', err);
+  // DEBUGGED audio-chunk relay
+socket.on('audio-chunk', (payload) => {
+  try {
+    const roomId = payload && payload.room ? payload.room : socket.data.roomId;
+    const sender = payload && payload.sender ? payload.sender : socket.id;
+    const bytes = payload && payload.data ? payload.data.length : 0;
+    console.log(`[audio-chunk] recv from ${socket.id} (sender:${sender}) room=${roomId} bytes=${bytes}`);
+
+    // sanity checks
+    if (!roomId) {
+      console.warn('[audio-chunk] missing roomId, ignoring');
+      return;
     }
-  });
+    if (!payload.data) {
+      console.warn('[audio-chunk] missing data, ignoring');
+      return;
+    }
+
+    const out = {
+      data: payload.data,
+      sample_rate: payload.sample_rate || 16000,
+      channels: payload.channels || 1,
+      sender
+    };
+    // forward to everyone else in the room
+    socket.to(roomId).emit('audio-chunk', out);
+    console.log(`[audio-chunk] forwarded from ${socket.id} to room ${roomId}`);
+  } catch (err) {
+    console.error('audio-chunk error', err);
+  }
+});
+
 
   socket.on('leave-room', () => {
     const roomId = socket.data.roomId;
