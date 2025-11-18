@@ -1,16 +1,51 @@
 {
-  "name": "mini-meet-full",
-  "version": "1.0.0",
-  "description": "Signaling server for Mini Meet + audio-chunk relay",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
-  },
+  "name": "mini-meet-live",
+  "displayName": "Mini Meet Live",
+  "description": "Mini Meet with simple Live-Share like follow sessions.",
+  "version": "1.0.2",
+  "publisher": "yourname",
   "engines": {
-    "node": ">=18"
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:miniMeetLive.openWebUi",
+    "onCommand:miniMeetLive.toggleShare"
+  ],
+  "main": "./extension.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shaszz/mini-meet-open-browser.git"
+  },
+  "contributes": {
+  "configuration": {
+    "type": "object",
+    "title": "Mini Meet",
+    "properties": {
+      "miniMeet.remoteUrl": {
+        "type": "string",
+        "default": "https://gmeetclone-dtov.onrender.com",
+        "description": "Base URL of your deployed meeting app (no trailing slash). Example: https://your-service.onrender.com or http://localhost:3000"
+      },
+      "miniMeet.autoCopy": {
+        "type": "boolean",
+        "default": true
+      }
+    }
   }
+},
+
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shaszz/mini-meet-open-browser/issues"
+  },
+  "homepage": "https://github.com/shaszz/mini-meet-open-browser#readme"
 }
